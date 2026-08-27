@@ -115,6 +115,15 @@ class P0Application:
         self.last_stable_state = shot.after_state
         return score_event
 
+    def _handle_completed_shot(self, shot: ShotEvent, events: Sequence[PotEvent]) -> None:
+        """P0 per-pot commit hook; P1 overrides this with atomic rule evaluation."""
+        auto_threshold = float(self.config["app"]["auto_commit_confidence"])  # type: ignore[index]
+        for event in events:
+            if event.status is PotStatus.CONFIRMED and event.confidence >= auto_threshold:
+                self._commit_pot(shot, event)
+            elif event.status in (PotStatus.CANDIDATE, PotStatus.UNKNOWN):
+                self.review_events.append(event)
+
     def process_frame(
         self, frame: np.ndarray, timestamp: datetime | None = None, frame_index: int | None = None
     ) -> P0ViewState:
@@ -176,18 +185,14 @@ class P0Application:
                 self.calibration.pockets,
                 pocket_activity=self.pocket_activity.snapshot() if self.pocket_activity else {},
             )
-            auto_threshold = float(self.config["app"]["auto_commit_confidence"])  # type: ignore[index]
-            for event in events:
-                if event.status is PotStatus.CONFIRMED and event.confidence >= auto_threshold:
-                    self._commit_pot(shot, event)
-                elif event.status in (PotStatus.CANDIDATE, PotStatus.UNKNOWN):
-                    self.review_events.append(event)
+            shot.potted_balls = tuple(events)
+            self._handle_completed_shot(shot, events)
             self.last_shot = shot
             self.last_stable_state = shot.after_state
             if self.review_events:
                 self.status = SystemStatus.REVIEW_REQUIRED
                 self.message = "Pot candidate requires confirmation"
-            else:
+            elif self.status is not SystemStatus.REVIEW_REQUIRED:
                 self.status = SystemStatus.READY
                 self.message = "Shot completed"
         return self.view_state()

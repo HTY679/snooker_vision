@@ -6,36 +6,64 @@ import tempfile
 import cv2
 import streamlit as st
 
-from snooker_vision.application import P0Application
+from snooker_vision.application import P1Application
 from snooker_vision.config import load_config
-from snooker_vision.demo import run_recorded_event_demo
-from snooker_vision.domain.models import SystemStatus
+from snooker_vision.domain.models import FrameStatus, MatchStatus, SystemStatus, event_to_dict
 from snooker_vision.input import FrameSource, FrameSourceError
 from snooker_vision.logging_config import configure_logging
-from snooker_vision.scoring import PlayerSwitchLocked
+from snooker_vision.rules import RulesError
 
 
-st.set_page_config(page_title="Snooker Vision P0", layout="wide")
+st.set_page_config(page_title="Snooker Vision P1", layout="wide")
 
 
-def _new_application() -> P0Application:
+def _new_application() -> P1Application:
     config = load_config()
     configure_logging(str(config["app"]["log_level"]), str(config["app"]["log_file"]))
-    return P0Application(config)
+    storage_dir = Path("data/processed/p1-active-match")
+    snapshot_path = storage_dir / "active-match.json"
+    event_log_path = storage_dir / "match-events.jsonl"
+    if snapshot_path.exists():
+        try:
+            return P1Application.restore(config, snapshot_path, event_log_path)
+        except (OSError, ValueError):
+            pass
+    return P1Application(config, storage_dir)
 
 
-if "p0_app" not in st.session_state:
-    st.session_state.p0_app = _new_application()
+if "p1_app" not in st.session_state:
+    st.session_state.p1_app = _new_application()
 if "frame_source" not in st.session_state:
     st.session_state.frame_source = None
 if "last_frame" not in st.session_state:
     st.session_state.last_frame = None
 
-app: P0Application = st.session_state.p0_app
+app: P1Application = st.session_state.p1_app
 
-st.title("斯诺克视觉自动计分系统 — P0")
+st.title("斯诺克视觉自动计分系统 — P1 完整规则")
 
 with st.sidebar:
+    st.subheader("Match")
+    player_a_name = st.text_input("Player A", value="Player A")
+    player_b_name = st.text_input("Player B", value="Player B")
+    best_of = st.selectbox("Format", options=[1, 3, 5, 7, 9], index=1, format_func=lambda value: f"Best of {value}")
+    if st.button("New Match", use_container_width=True):
+        try:
+            app.new_match(player_a_name, player_b_name, best_of=best_of)
+            st.success("Match created")
+        except Exception as exc:
+            st.error(str(exc))
+    match = app.view_state().match
+    can_start = match is not None and match.status is not MatchStatus.FINISHED and (
+        match.current_frame.status in (FrameStatus.NOT_STARTED, FrameStatus.FINISHED)
+    )
+    if st.button("Start / Next Frame", use_container_width=True, disabled=not can_start):
+        try:
+            app.start_frame()
+            st.success("Frame started")
+        except RulesError as exc:
+            st.error(str(exc))
+    st.divider()
     st.subheader("Input & Calibration")
     source_text = st.text_input("Video path or camera index", value="0")
     calibration_path = st.text_input("Calibration JSON", value="config/calibration.json")
@@ -56,12 +84,6 @@ with st.sidebar:
         except Exception as exc:
             st.session_state.frame_source = None
             st.error(str(exc))
-    st.divider()
-    if st.button("Run deterministic P0 demo", use_container_width=True):
-        st.session_state.p0_app = _new_application()
-        app = st.session_state.p0_app
-        result = run_recorded_event_demo(app)
-        st.success(f"Demo: 0 → {result['after_red']} → {result['after_black']} → {result['after_undo']}")
 
 
 def process_frames(count: int) -> None:
@@ -80,7 +102,7 @@ def process_frames(count: int) -> None:
         st.session_state.last_frame = packet.frame
 
 
-control_a, control_b, control_c, control_d = st.columns(4)
+control_a, control_b, control_c = st.columns(3)
 with control_a:
     if st.button("Process next frame", use_container_width=True):
         process_frames(1)
@@ -88,12 +110,6 @@ with control_b:
     if st.button("Process 100 frames", use_container_width=True):
         process_frames(100)
 with control_c:
-    if st.button("Switch Player", use_container_width=True):
-        try:
-            app.switch_player()
-        except PlayerSwitchLocked as exc:
-            st.warning(str(exc))
-with control_d:
     if st.button("Undo", use_container_width=True):
         app.undo()
 
@@ -103,11 +119,30 @@ score_a.metric("Player A", view.scoreboard.player_a_score)
 current.metric("Current Player", view.scoreboard.current_player.value.replace("PLAYER_", ""))
 score_b.metric("Player B", view.scoreboard.player_b_score)
 
-status_a, status_b, status_c = st.columns(3)
-status_a.metric("System State", view.system_status.value)
-status_b.metric("Motion", view.motion)
+status_a, status_b, status_c, status_d = st.columns(4)
+status_a.markdown(f"**System State**  \n`{view.system_status.value}`")
+status_b.markdown(f"**Motion**  \n`{view.motion}`")
 status_c.metric("Current Break", view.scoreboard.current_break)
+if view.match is not None:
+    status_d.metric("Frame Wins", f"{view.match.player_a_frames} : {view.match.player_b_frames}")
+else:
+    status_d.metric("Frame Wins", "—")
 st.info(view.message)
+
+if view.match is not None:
+    frame = view.match.current_frame
+    rule_a, rule_b, rule_c, rule_d = st.columns(4)
+    rule_a.metric("Frame", frame.frame_number)
+    rule_b.markdown(f"**Rule Phase**  \n`{frame.phase.value}`")
+    expected_ball = frame.expected_ball.value if frame.expected_ball else "—"
+    rule_c.markdown(f"**Expected Ball**  \n`{expected_ball}`")
+    rule_d.metric("Reds Remaining", frame.remaining_reds)
+    if frame.pending_respots:
+        st.warning("Pending respot: " + ", ".join(color.value for color in frame.pending_respots))
+        for color in dict.fromkeys(frame.pending_respots):
+            if st.button(f"Confirm {color.value} respotted", key=f"respot-{color.value}"):
+                app.complete_respot(color)
+                st.rerun()
 
 video_col, event_col = st.columns([3, 2])
 with video_col:
@@ -119,7 +154,8 @@ with event_col:
     st.subheader("Last Event")
     st.write("Last Shot", view.last_shot.shot_id if view.last_shot else "—")
     st.write("Last Potted Ball", view.last_pot.ball_color.value if view.last_pot else "—")
-    st.write("Score Delta", view.last_score_event.score_delta if view.last_score_event else 0)
+    st.write("Rule Decision", view.last_rule_decision.status.value if view.last_rule_decision else "—")
+    st.write("Score Delta", view.last_rule_decision.points if view.last_rule_decision else 0)
     st.write("Confidence", view.last_pot.confidence if view.last_pot else "—")
     st.write("Review Status", "REQUIRED" if view.review_events else "CLEAR")
 
@@ -134,3 +170,22 @@ if view.review_events:
         if right.button("Reject", key=f"reject-{pending.event_id}"):
             app.reject_pot(pending.event_id)
             st.rerun()
+
+if view.pending_fouls:
+    st.subheader("Possible fouls requiring referee confirmation")
+    for foul in view.pending_fouls:
+        left, confirm, cancel = st.columns([4, 1, 1])
+        left.write(
+            f"{foul.shot.shot_id}: {', '.join(foul.reasons)} — proposed penalty {foul.penalty_points}"
+        )
+        if confirm.button("Confirm Foul", key=f"confirm-foul-{foul.event_id}"):
+            app.confirm_foul(foul.event_id)
+            st.rerun()
+        if cancel.button("Cancel", key=f"cancel-foul-{foul.event_id}"):
+            app.cancel_foul(foul.event_id)
+            st.rerun()
+
+if view.rule_events:
+    st.subheader("Match Event Log")
+    rows = [dict(event_to_dict(event)) for event in view.rule_events[-25:]]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
