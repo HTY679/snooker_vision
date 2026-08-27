@@ -1,0 +1,24 @@
+{
+  "video_id": "red_pot_corner_001",
+  "video_file": "data/raw/red_pot_corner.mp4",
+  "frame_start": null,
+  "frame_end": null,
+  "before": {
+    "red": 6,
+    "black": 1,
+    "white": 1
+  },
+  "expected_event": {
+    "type": "POTTED",
+    "color": "RED",
+    "count": 1
+  },
+  "after": {
+    "red": 5,
+    "black": 1,
+    "white": 1
+  },
+  "expected_score": 1,
+  "notes": "Replace null frame bounds after annotation. This example is not evidence that the real-video case passed."
+}
+

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "frame_width": 640,
+  "frame_height": 360,
+  "output_width": 1200,
+  "output_height": 600,
+  "corners": [
+    {"x": 20.0, "y": 20.0},
+    {"x": 620.0, "y": 20.0},
+    {"x": 620.0, "y": 340.0},
+    {"x": 20.0, "y": 340.0}
+  ],
+  "pockets": [
+    {"pocket_id": "TOP_LEFT", "x": 0.0, "y": 0.0, "radius": 28.0},
+    {"pocket_id": "TOP_MIDDLE", "x": 600.0, "y": 0.0, "radius": 28.0},
+    {"pocket_id": "TOP_RIGHT", "x": 1199.0, "y": 0.0, "radius": 28.0},
+    {"pocket_id": "BOTTOM_RIGHT", "x": 1199.0, "y": 599.0, "radius": 28.0},
+    {"pocket_id": "BOTTOM_MIDDLE", "x": 600.0, "y": 599.0, "radius": 28.0},
+    {"pocket_id": "BOTTOM_LEFT", "x": 0.0, "y": 599.0, "radius": 28.0}
+  ]
+}
+

@@ -1,0 +1,106 @@
+app:
+  log_level: INFO
+  log_file: logs/snooker_vision.log
+  auto_commit_confidence: 0.70
+
+input:
+  black_frame_mean_max: 4.0
+  frozen_frame_count: 120
+
+calibration:
+  output_width: 1200
+  output_height: 600
+  min_table_area_ratio: 0.25
+  min_corner_distance_px: 20.0
+  min_polygon_area_ratio: 0.05
+  max_pocket_overlap_ratio: 0.35
+  auto_roi:
+    hsv_lower: [30, 25, 20]
+    hsv_upper: [105, 255, 255]
+    morphology_kernel: 11
+    approx_epsilon_ratio: 0.025
+  monitor:
+    max_shift_px: 5.0
+    min_phase_response: 0.08
+    max_mean_abs_diff: 45.0
+
+detection:
+  inner_margin_px: 12
+  min_radius_px: 5.0
+  max_radius_px: 22.0
+  min_circularity: 0.55
+  max_aspect_ratio: 1.55
+  min_non_felt_fraction: 0.30
+  duplicate_distance_factor: 0.75
+  mask_blur_kernel: 5
+  morphology_kernel: 3
+  felt_hsv_lower: [30, 25, 20]
+  felt_hsv_upper: [105, 255, 255]
+  hough:
+    enabled: true
+    dp: 1.2
+    min_distance_px: 10
+    param1: 80
+    param2: 13
+
+classification:
+  min_confidence: 0.45
+  max_lab_distance: 78.0
+  min_distance_margin: 6.0
+  achromatic_saturation_max: 25
+  black_value_max: 65
+  white_value_min: 185
+  inner_radius_ratio: 0.68
+  trim_fraction: 0.10
+  prototypes_bgr:
+    RED: [35, 35, 210]
+    YELLOW: [25, 220, 225]
+    GREEN: [35, 145, 35]
+    BROWN: [35, 75, 130]
+    BLUE: [205, 90, 35]
+    PINK: [175, 175, 235]
+    BLACK: [22, 22, 22]
+    WHITE: [238, 238, 238]
+
+motion:
+  blur_kernel: 5
+  diff_threshold: 12
+  min_component_area_px: 10
+  max_component_area_px: 3000
+  max_component_aspect_ratio: 4.0
+  min_motion_ratio: 0.00002
+  max_changed_ratio: 0.16
+  moving_confirmation_frames: 2
+  static_confirmation_frames: 12
+  max_global_shift_px: 4.0
+
+state:
+  confirmation_frames: 3
+  position_tolerance_px: 12.0
+  min_state_confidence: 0.60
+  continuity_count_tolerance: 0
+
+shot:
+  minimum_duration_seconds: 0.08
+
+pot:
+  missing_confirmation_frames: 3
+  pocket_proximity_factor: 1.8
+  min_direction_improvement_px: 2.0
+  strong_pocket_activity: 0.04
+  confirmed_confidence: 0.70
+  candidate_confidence: 0.30
+
+scoring:
+  values:
+    RED: 1
+    YELLOW: 2
+    GREEN: 3
+    BROWN: 4
+    BLUE: 5
+    PINK: 6
+    BLACK: 7
+
+ui:
+  refresh_interval_ms: 100
+  frame_width: 900

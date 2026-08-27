@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snooker-vision-p0"
+version = "0.1.0"
+description = "P0 proof of concept for vision-assisted snooker scoring"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26,<3",
+  "opencv-python>=4.9,<5",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.37,<2"]
+test = ["pytest>=8.2,<9", "pytest-cov>=5,<7", "openpyxl>=3.1,<4"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "acceptance: Excel-backed P0 acceptance test",
+  "data_required: requires user-supplied real video data",
+  "integration: integration test",
+]
+

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "videos": [
+    {"file": "static_table.mp4", "purpose": "stable ROI, ball detection and color inventory", "status": "DATA_REQUIRED"},
+    {"file": "red_pot_corner.mp4", "purpose": "corner-pocket red pot", "status": "DATA_REQUIRED"},
+    {"file": "red_pot_middle.mp4", "purpose": "middle-pocket red pot", "status": "DATA_REQUIRED"},
+    {"file": "black_pot.mp4", "purpose": "black pot and +7 score", "status": "DATA_REQUIRED"},
+    {"file": "ball_bounce_out.mp4", "purpose": "pocket entry followed by return; must not pot", "status": "DATA_REQUIRED"},
+    {"file": "cue_occlusion.mp4", "purpose": "cue occlusion; must not pot or create false shot", "status": "DATA_REQUIRED"},
+    {"file": "hand_occlusion.mp4", "purpose": "hand occlusion; must not pot", "status": "DATA_REQUIRED"},
+    {"file": "slow_roll.mp4", "purpose": "near-threshold slow motion remains MOVING", "status": "DATA_REQUIRED"},
+    {"file": "fast_shot.mp4", "purpose": "one fast multi-ball shot remains a single Shot", "status": "DATA_REQUIRED"}
+  ]
+}
+

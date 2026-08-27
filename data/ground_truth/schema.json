@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Snooker Vision P0 Ground Truth",
+  "type": "object",
+  "required": ["video_id", "video_file", "before", "expected_event", "after", "expected_score"],
+  "properties": {
+    "video_id": {"type": "string"},
+    "video_file": {"type": "string"},
+    "frame_start": {"type": ["integer", "null"], "minimum": 0},
+    "frame_end": {"type": ["integer", "null"], "minimum": 0},
+    "before": {"$ref": "#/$defs/colorCounts"},
+    "after": {"$ref": "#/$defs/colorCounts"},
+    "expected_event": {
+      "type": "object",
+      "required": ["type", "color", "count"],
+      "properties": {
+        "type": {"enum": ["POTTED", "POT_CANDIDATE", "NO_POT", "UNKNOWN"]},
+        "color": {"enum": ["RED", "YELLOW", "GREEN", "BROWN", "BLUE", "PINK", "BLACK", "WHITE", "UNKNOWN"]},
+        "count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "expected_score": {"type": "integer", "minimum": 0},
+    "notes": {"type": "string"}
+  },
+  "$defs": {
+    "colorCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "red": {"type": "integer", "minimum": 0},
+        "yellow": {"type": "integer", "minimum": 0},
+        "green": {"type": "integer", "minimum": 0},
+        "brown": {"type": "integer", "minimum": 0},
+        "blue": {"type": "integer", "minimum": 0},
+        "pink": {"type": "integer", "minimum": 0},
+        "black": {"type": "integer", "minimum": 0},
+        "white": {"type": "integer", "minimum": 0},
+        "unknown": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}
+
