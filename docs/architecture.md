@@ -1,4 +1,4 @@
-# P0 Architecture
+# P0/P1 Architecture
 
 ## 设计目标
 
@@ -40,3 +40,24 @@ FrameSource
 
 核心对象包括 `Ball`、`ColorCounts`、`TableState`、`ShotEvent`、`PotEvidence`、`PotEvent`、`ScoreEvent` 和 `ScoreboardState`。所有事件具有明确 ID；Score Event 使用 Pot Event ID 作为幂等来源。
 
+## P1 规则层
+
+P1 在 P0 `P0Application` 的已完成击球钩子上组合 `P1Application`，不改变检测、分类、Motion 和 Shot FSM 的职责边界。
+
+```text
+P0 confirmed shot outcome
+  → P1Application (one-shot transaction)
+  → SnookerRulesEngine
+      → MatchState / FrameState
+      → RuleDecision / FoulEvent
+      → MatchEvent
+  → JSONL EventLog + atomic snapshot
+  → Streamlit rule-state view
+```
+
+- `domain/models.py`：比赛、局、阶段、击球结果、犯规决定与事件模型。
+- `rules/engine.py`：红彩阶段、清彩、重摆、犯规、罚分、换人、局/比赛结束和原子撤销。
+- `rules/event_log.py`：追加式 JSONL、事件幂等、按局/击球查询和撤销审计。
+- `application/p1_service.py`：把 P0 击球结果转换为规则事务，并保存/恢复快照。
+
+P1 规则状态是比赛计分的权威来源；P0 scoreboard 仅作为兼容视图同步，避免两套独立账本产生分歧。一个击球及其落袋、罚分、换人和阶段迁移共享同一事务边界，Undo 也以该边界回滚。

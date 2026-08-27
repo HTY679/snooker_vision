@@ -1,6 +1,6 @@
-# Snooker Vision — P0
+# Snooker Vision — P1
 
-传统计算机视觉驱动的斯诺克自动计分 Proof of Concept。需求基线是仓库根目录的 `snooker_vision_user_stories_and_test_cases.xlsx`，范围严格限制在 P0。
+传统计算机视觉驱动的斯诺克自动计分与规则状态机。需求基线是仓库根目录的 `snooker_vision_user_stories_and_test_cases.xlsx`；P1 在保持 P0 视觉管线与回归行为的基础上增加比赛、局和规则处理。
 
 ## 已实现能力
 
@@ -11,10 +11,14 @@
 - 多帧 STATIC/MOVING 判断与 `STATIC → MOVING → STATIC` Shot FSM
 - Before/After 稳定状态、多帧状态差、Pot Candidate/Confirmed Pot
 - P0 颜色分值、当前球员、幂等 Score Event、Undo
-- Streamlit 计分界面、CLI 管线和确定性事件 Demo
-- Excel 151 条 P0 Test Case 的 pytest 收集与追踪
+- P1 Match/Frame 模型、Best-of 比赛与局胜负
+- 红球/彩球交替、清彩顺序、重摆提示、平分重置黑球
+- 犯规候选的确认/取消、罚分、换人，以及整次击球原子 Undo
+- JSONL 事件日志、幂等事件、快照恢复
+- Streamlit 规则界面、CLI 管线和确定性事件 Demo
+- Excel 151 条 P0 + 117 条 P1 Test Case 的 pytest 收集与追踪
 
-不包含完整斯诺克规则、犯规罚分、自动换人、彩球重摆、长期多球 ID Tracking、云端或账户功能。
+P1 覆盖当前 Excel 基线中的核心比赛规则；完整裁判规则、长期多球 ID Tracking、云端和账户功能不在本迭代范围。详见 `docs/known_limitations.md`。
 
 ## 环境安装
 
@@ -51,7 +55,7 @@ python scripts/calibrate.py --source data/raw/static_table.mp4 --output config/c
 streamlit run src/snooker_vision/ui/app.py
 ```
 
-界面支持打开视频/摄像头、逐帧或批量处理、切换球员、确认/拒绝 Pot Candidate、Undo，以及运行无需真实视频的确定性 P0 Demo。
+界面支持创建比赛、开始/结束一局、展示目标球与阶段、确认重摆/犯规、恢复快照、打开视频/摄像头、确认/拒绝 Pot Candidate 和 Undo。
 
 ## 3. 运行 CLI
 
@@ -75,7 +79,7 @@ python scripts/demo_recorded_events.py
 python -m pytest -q
 ```
 
-Excel 中每条 P0 TC 都被收集为独立 pytest 参数。纯业务逻辑场景会执行；缺少对应真实视频的视觉/UI 验收场景明确 `SKIPPED`，原因以 `DATA_REQUIRED` 开头。不能把这些 Skipped 解读为通过。
+Excel 中每条 P0/P1 TC 都被收集为独立 pytest 参数。纯业务逻辑场景会执行；缺少对应真实视频的视觉/UI 验收场景明确 `SKIPPED`，原因以 `DATA_REQUIRED` 开头。不能把这些 Skipped 解读为通过。
 
 ## 配置与日志
 
@@ -84,5 +88,4 @@ Excel 中每条 P0 TC 都被收集为独立 pytest 参数。纯业务逻辑场�
 - JSON 日志：`logs/snooker_vision.log`
 - Ground Truth：`data/ground_truth/`
 
-采集真实视频前请阅读 `docs/data_collection.md`；架构、测试结果与限制分别见 `docs/architecture.md`、`docs/testing.md` 和 `docs/p0_completion_report.md`。
-
+采集真实视频前请阅读 `docs/data_collection.md`；P1 设计、测试结果、限制和完成报告分别见 `docs/p1_design.md`、`docs/testing.md`、`docs/known_limitations.md` 和 `docs/p1_completion_report.md`。P0 报告保留在 `docs/p0_completion_report.md`，其中 Partial 与 `DATA_REQUIRED` 状态未被改写。

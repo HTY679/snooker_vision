@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "snooker-vision-p0"
-version = "0.1.0"
-description = "P0 proof of concept for vision-assisted snooker scoring"
+name = "snooker-vision"
+version = "0.2.0"
+description = "Vision-assisted snooker scoring with P1 match rules"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26,<3",
@@ -28,8 +28,7 @@ addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
-  "acceptance: Excel-backed P0 acceptance test",
+  "acceptance: Excel-backed acceptance test",
   "data_required: requires user-supplied real video data",
   "integration: integration test",
 ]
-
