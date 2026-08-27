@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
@@ -365,6 +367,55 @@ class SnookerRulesEngine:
                 details={"undone_event_ids": entry.event_ids},
             )
 
+    def save_snapshot(self, path: str | Path) -> Path:
+        """Atomically persist match/rule state for process-restart recovery."""
+        with self._lock:
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "version": 1,
+                "state": self._state_to_dict(self.state),
+                "fouls": [self._foul_to_dict(foul) for foul in self._fouls.values()],
+                "pending_foul_ids": list(self._pending_fouls),
+                "processed_shots": [
+                    self._decision_to_dict(decision) for decision in self._processed_shots.values()
+                ],
+                "event_log_path": str(self.event_log.path) if self.event_log.path is not None else None,
+            }
+            temporary = target.with_suffix(f"{target.suffix}.tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            temporary.replace(target)
+            return target
+
+    @classmethod
+    def load_snapshot(
+        cls,
+        path: str | Path,
+        event_log_path: str | Path | None = None,
+    ) -> "SnookerRulesEngine":
+        source = Path(path)
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        if int(payload.get("version", 0)) != 1:
+            raise ValueError("Unsupported P1 match snapshot version")
+        stored_log = payload.get("event_log_path")
+        log = EventLog(event_log_path or stored_log) if (event_log_path or stored_log) else EventLog()
+        engine = cls(log)
+        engine._state = cls._state_from_dict(payload["state"])
+        for foul_payload in payload.get("fouls", []):
+            foul = cls._foul_from_dict(foul_payload)
+            engine._fouls[foul.event_id] = foul
+        for foul_id in payload.get("pending_foul_ids", []):
+            foul = engine._fouls.get(str(foul_id))
+            if foul is not None and foul.status is FoulStatus.CANDIDATE:
+                engine._pending_fouls[foul.event_id] = foul
+        for decision_payload in payload.get("processed_shots", []):
+            decision = cls._decision_from_dict(decision_payload)
+            engine._processed_shots[decision.shot_id] = decision
+        return engine
+
     def _apply_legal_outcome(self, outcome: ShotOutcome) -> RuleDecision:
         prior_state = self.state
         frame = prior_state.current_frame
@@ -645,3 +696,181 @@ class SnookerRulesEngine:
         if state.status is MatchStatus.FINISHED or state.current_frame.status is not FrameStatus.PLAYING:
             raise MatchNotReady("Start an unfinished frame before processing rule events")
         return state
+
+    @staticmethod
+    def _frame_to_dict(frame: FrameState) -> dict[str, object]:
+        return {
+            "frame_number": frame.frame_number,
+            "status": frame.status.value,
+            "player_a_score": frame.player_a_score,
+            "player_b_score": frame.player_b_score,
+            "current_player": frame.current_player.value,
+            "current_break": frame.current_break,
+            "remaining_reds": frame.remaining_reds,
+            "phase": frame.phase.value,
+            "expected_ball": frame.expected_ball.value if frame.expected_ball is not None else None,
+            "colors_on_table": [color.value for color in frame.colors_on_table],
+            "pending_respots": [color.value for color in frame.pending_respots],
+            "winner": frame.winner.value if frame.winner is not None else None,
+        }
+
+    @staticmethod
+    def _frame_from_dict(payload: dict[str, object]) -> FrameState:
+        expected = payload.get("expected_ball")
+        winner = payload.get("winner")
+        return FrameState(
+            frame_number=int(payload["frame_number"]),
+            status=FrameStatus(str(payload["status"])),
+            player_a_score=int(payload["player_a_score"]),
+            player_b_score=int(payload["player_b_score"]),
+            current_player=Player(str(payload["current_player"])),
+            current_break=int(payload["current_break"]),
+            remaining_reds=int(payload["remaining_reds"]),
+            phase=RulePhase(str(payload["phase"])),
+            expected_ball=BallColor(str(expected)) if expected is not None else None,
+            colors_on_table=tuple(BallColor(str(color)) for color in payload["colors_on_table"]),
+            pending_respots=tuple(BallColor(str(color)) for color in payload["pending_respots"]),
+            winner=Player(str(winner)) if winner is not None else None,
+        )
+
+    @classmethod
+    def _state_to_dict(cls, state: MatchState) -> dict[str, object]:
+        return {
+            "match_id": state.match_id,
+            "player_a": {
+                "player_id": state.player_a.player_id,
+                "seat": state.player_a.seat.value,
+                "display_name": state.player_a.display_name,
+            },
+            "player_b": {
+                "player_id": state.player_b.player_id,
+                "seat": state.player_b.seat.value,
+                "display_name": state.player_b.display_name,
+            },
+            "best_of": state.best_of,
+            "status": state.status.value,
+            "player_a_frames": state.player_a_frames,
+            "player_b_frames": state.player_b_frames,
+            "current_frame": cls._frame_to_dict(state.current_frame),
+            "completed_frames": [
+                {
+                    "frame_number": result.frame_number,
+                    "player_a_score": result.player_a_score,
+                    "player_b_score": result.player_b_score,
+                    "winner": result.winner.value,
+                    "finished_at": result.finished_at.isoformat(),
+                }
+                for result in state.completed_frames
+            ],
+            "winner": state.winner.value if state.winner is not None else None,
+        }
+
+    @classmethod
+    def _state_from_dict(cls, payload: dict[str, object]) -> MatchState:
+        player_a_payload = payload["player_a"]
+        player_b_payload = payload["player_b"]
+        assert isinstance(player_a_payload, dict) and isinstance(player_b_payload, dict)
+        winner = payload.get("winner")
+        completed_payload = payload.get("completed_frames", [])
+        assert isinstance(completed_payload, list)
+        return MatchState(
+            match_id=str(payload["match_id"]),
+            player_a=PlayerIdentity(
+                str(player_a_payload["player_id"]),
+                Player(str(player_a_payload["seat"])),
+                str(player_a_payload["display_name"]),
+            ),
+            player_b=PlayerIdentity(
+                str(player_b_payload["player_id"]),
+                Player(str(player_b_payload["seat"])),
+                str(player_b_payload["display_name"]),
+            ),
+            best_of=int(payload["best_of"]),
+            status=MatchStatus(str(payload["status"])),
+            player_a_frames=int(payload["player_a_frames"]),
+            player_b_frames=int(payload["player_b_frames"]),
+            current_frame=cls._frame_from_dict(payload["current_frame"]),
+            completed_frames=tuple(
+                FrameResult(
+                    int(item["frame_number"]),
+                    int(item["player_a_score"]),
+                    int(item["player_b_score"]),
+                    Player(str(item["winner"])),
+                    datetime.fromisoformat(str(item["finished_at"])),
+                )
+                for item in completed_payload
+            ),
+            winner=Player(str(winner)) if winner is not None else None,
+        )
+
+    @staticmethod
+    def _shot_to_dict(shot: ShotOutcome) -> dict[str, object]:
+        return {
+            "shot_id": shot.shot_id,
+            "player": shot.player.value,
+            "potted_colors": [color.value for color in shot.potted_colors],
+            "nominated_color": shot.nominated_color.value if shot.nominated_color is not None else None,
+            "confirmed": shot.confirmed,
+            "confidence": shot.confidence,
+            "timestamp": shot.timestamp.isoformat(),
+        }
+
+    @staticmethod
+    def _shot_from_dict(payload: dict[str, object]) -> ShotOutcome:
+        nominated = payload.get("nominated_color")
+        return ShotOutcome(
+            shot_id=str(payload["shot_id"]),
+            player=Player(str(payload["player"])),
+            potted_colors=tuple(BallColor(str(color)) for color in payload["potted_colors"]),
+            nominated_color=BallColor(str(nominated)) if nominated is not None else None,
+            confirmed=bool(payload["confirmed"]),
+            confidence=float(payload["confidence"]),
+            timestamp=datetime.fromisoformat(str(payload["timestamp"])),
+        )
+
+    @classmethod
+    def _foul_to_dict(cls, foul: FoulEvent) -> dict[str, object]:
+        return {
+            "event_id": foul.event_id,
+            "shot": cls._shot_to_dict(foul.shot),
+            "reasons": list(foul.reasons),
+            "penalty_points": foul.penalty_points,
+            "status": foul.status.value,
+            "created_at": foul.created_at.isoformat(),
+        }
+
+    @classmethod
+    def _foul_from_dict(cls, payload: dict[str, object]) -> FoulEvent:
+        return FoulEvent(
+            event_id=str(payload["event_id"]),
+            shot=cls._shot_from_dict(payload["shot"]),
+            reasons=tuple(str(reason) for reason in payload["reasons"]),
+            penalty_points=int(payload["penalty_points"]),
+            status=FoulStatus(str(payload["status"])),
+            created_at=datetime.fromisoformat(str(payload["created_at"])),
+        )
+
+    @staticmethod
+    def _decision_to_dict(decision: RuleDecision) -> dict[str, object]:
+        return {
+            "shot_id": decision.shot_id,
+            "status": decision.status.value,
+            "player": decision.player.value,
+            "points": decision.points,
+            "penalty_points": decision.penalty_points,
+            "foul_event_id": decision.foul_event_id,
+            "message": decision.message,
+        }
+
+    @staticmethod
+    def _decision_from_dict(payload: dict[str, object]) -> RuleDecision:
+        foul_event_id = payload.get("foul_event_id")
+        return RuleDecision(
+            shot_id=str(payload["shot_id"]),
+            status=RuleDecisionStatus(str(payload["status"])),
+            player=Player(str(payload["player"])),
+            points=int(payload.get("points", 0)),
+            penalty_points=int(payload.get("penalty_points", 0)),
+            foul_event_id=str(foul_event_id) if foul_event_id is not None else None,
+            message=str(payload.get("message", "")),
+        )
