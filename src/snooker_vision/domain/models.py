@@ -62,6 +62,57 @@ class SystemStatus(str, Enum):
     CALIBRATION_INVALID = "CALIBRATION_INVALID"
 
 
+class RulePhase(str, Enum):
+    EXPECT_RED = "EXPECT_RED"
+    EXPECT_COLOR = "EXPECT_COLOR"
+    CLEARANCE = "CLEARANCE"
+    RESPOTTED_BLACK = "RESPOTTED_BLACK"
+    FRAME_COMPLETE = "FRAME_COMPLETE"
+
+
+class FrameStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    PLAYING = "PLAYING"
+    FINISHED = "FINISHED"
+
+
+class MatchStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    PLAYING = "PLAYING"
+    FINISHED = "FINISHED"
+
+
+class FoulStatus(str, Enum):
+    CANDIDATE = "CANDIDATE"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+    REVERTED = "REVERTED"
+
+
+class RuleDecisionStatus(str, Enum):
+    LEGAL = "LEGAL"
+    MISS = "MISS"
+    FOUL_CANDIDATE = "FOUL_CANDIDATE"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
+class MatchEventType(str, Enum):
+    MATCH_CREATED = "MATCH_CREATED"
+    MATCH_STARTED = "MATCH_STARTED"
+    FRAME_STARTED = "FRAME_STARTED"
+    SCORE = "SCORE"
+    MISS = "MISS"
+    FOUL_CANDIDATE = "FOUL_CANDIDATE"
+    FOUL_CONFIRMED = "FOUL_CONFIRMED"
+    FOUL_CANCELLED = "FOUL_CANCELLED"
+    PLAYER_SWITCHED = "PLAYER_SWITCHED"
+    RESPOT_PENDING = "RESPOT_PENDING"
+    RESPOT_COMPLETED = "RESPOT_COMPLETED"
+    FRAME_FINISHED = "FRAME_FINISHED"
+    MATCH_FINISHED = "MATCH_FINISHED"
+    UNDO = "UNDO"
+
+
 @dataclass(frozen=True, slots=True)
 class Point:
     x: float
@@ -213,6 +264,184 @@ class ScoreEvent:
     undone: bool = False
 
 
+SNOOKER_COLOR_ORDER = (
+    BallColor.YELLOW,
+    BallColor.GREEN,
+    BallColor.BROWN,
+    BallColor.BLUE,
+    BallColor.PINK,
+    BallColor.BLACK,
+)
+
+SNOOKER_BALL_VALUES: Mapping[BallColor, int] = {
+    BallColor.RED: 1,
+    BallColor.YELLOW: 2,
+    BallColor.GREEN: 3,
+    BallColor.BROWN: 4,
+    BallColor.BLUE: 5,
+    BallColor.PINK: 6,
+    BallColor.BLACK: 7,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerIdentity:
+    player_id: str
+    seat: Player
+    display_name: str
+
+    def __post_init__(self) -> None:
+        if not self.player_id:
+            raise ValueError("Player id must not be empty")
+        if not self.display_name.strip():
+            raise ValueError("Player display name must not be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class FrameState:
+    frame_number: int
+    status: FrameStatus = FrameStatus.NOT_STARTED
+    player_a_score: int = 0
+    player_b_score: int = 0
+    current_player: Player = Player.PLAYER_A
+    current_break: int = 0
+    remaining_reds: int = 15
+    phase: RulePhase = RulePhase.EXPECT_RED
+    expected_ball: BallColor | None = BallColor.RED
+    colors_on_table: tuple[BallColor, ...] = SNOOKER_COLOR_ORDER
+    pending_respots: tuple[BallColor, ...] = ()
+    winner: Player | None = None
+
+    def __post_init__(self) -> None:
+        if self.frame_number < 1:
+            raise ValueError("Frame number must be positive")
+        if not 0 <= self.remaining_reds <= 15:
+            raise ValueError("remaining_reds must be in [0, 15]")
+        if min(self.player_a_score, self.player_b_score, self.current_break) < 0:
+            raise ValueError("Frame scores and break must not be negative")
+        if len(set(self.colors_on_table)) != len(self.colors_on_table):
+            raise ValueError("colors_on_table must not contain duplicates")
+        if any(color not in SNOOKER_COLOR_ORDER for color in self.colors_on_table):
+            raise ValueError("colors_on_table may contain colors only")
+        if any(color not in SNOOKER_COLOR_ORDER for color in self.pending_respots):
+            raise ValueError("pending_respots may contain colors only")
+        if self.phase is RulePhase.EXPECT_RED and self.remaining_reds == 0:
+            raise ValueError("EXPECT_RED is invalid when no reds remain")
+        if self.phase is RulePhase.CLEARANCE and self.expected_ball not in SNOOKER_COLOR_ORDER:
+            raise ValueError("Clearance requires an expected color")
+        if self.phase is RulePhase.RESPOTTED_BLACK and self.expected_ball is not BallColor.BLACK:
+            raise ValueError("Respotted-black phase must expect black")
+        if self.status is FrameStatus.FINISHED and self.phase is not RulePhase.FRAME_COMPLETE:
+            raise ValueError("Finished frame must be in FRAME_COMPLETE phase")
+
+    def score_for(self, player: Player) -> int:
+        return self.player_a_score if player is Player.PLAYER_A else self.player_b_score
+
+
+@dataclass(frozen=True, slots=True)
+class FrameResult:
+    frame_number: int
+    player_a_score: int
+    player_b_score: int
+    winner: Player
+    finished_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MatchState:
+    match_id: str
+    player_a: PlayerIdentity
+    player_b: PlayerIdentity
+    best_of: int
+    status: MatchStatus
+    player_a_frames: int
+    player_b_frames: int
+    current_frame: FrameState
+    completed_frames: tuple[FrameResult, ...] = ()
+    winner: Player | None = None
+
+    def __post_init__(self) -> None:
+        if not self.match_id:
+            raise ValueError("Match id must not be empty")
+        if self.best_of < 1 or self.best_of > 35 or self.best_of % 2 == 0:
+            raise ValueError("best_of must be an odd number between 1 and 35")
+        if min(self.player_a_frames, self.player_b_frames) < 0:
+            raise ValueError("Frame wins must not be negative")
+        if self.player_a.seat is not Player.PLAYER_A or self.player_b.seat is not Player.PLAYER_B:
+            raise ValueError("Player identities must match their seats")
+
+    @property
+    def frames_to_win(self) -> int:
+        return self.best_of // 2 + 1
+
+    def frames_for(self, player: Player) -> int:
+        return self.player_a_frames if player is Player.PLAYER_A else self.player_b_frames
+
+
+@dataclass(frozen=True, slots=True)
+class ShotOutcome:
+    shot_id: str
+    player: Player
+    potted_colors: tuple[BallColor, ...] = ()
+    nominated_color: BallColor | None = None
+    confirmed: bool = True
+    confidence: float = 1.0
+    timestamp: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.shot_id:
+            raise ValueError("Shot id must not be empty")
+        if self.timestamp.tzinfo is None:
+            raise ValueError("ShotOutcome timestamp must be timezone-aware")
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError("ShotOutcome confidence must be in [0, 1]")
+        if BallColor.UNKNOWN in self.potted_colors:
+            raise ValueError("Unknown potted colors require review before rule processing")
+        if self.nominated_color is not None and self.nominated_color not in SNOOKER_COLOR_ORDER:
+            raise ValueError("Nominated ball must be a color")
+
+
+@dataclass(slots=True)
+class FoulEvent:
+    event_id: str
+    shot: ShotOutcome
+    reasons: tuple[str, ...]
+    penalty_points: int
+    status: FoulStatus = FoulStatus.CANDIDATE
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.event_id or not self.reasons:
+            raise ValueError("Foul event id and reasons are required")
+        if not 4 <= self.penalty_points <= 7:
+            raise ValueError("Snooker foul penalty must be in [4, 7]")
+
+
+@dataclass(frozen=True, slots=True)
+class RuleDecision:
+    shot_id: str
+    status: RuleDecisionStatus
+    player: Player
+    points: int = 0
+    penalty_points: int = 0
+    foul_event_id: str | None = None
+    message: str = ""
+
+
+@dataclass(slots=True)
+class MatchEvent:
+    event_id: str
+    event_type: MatchEventType
+    match_id: str
+    frame_number: int
+    timestamp: datetime
+    player: Player | None = None
+    shot_id: str | None = None
+    score_delta: int = 0
+    details: dict[str, Any] = field(default_factory=dict)
+    undone: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class FrameQuality:
     valid: bool
@@ -250,4 +479,3 @@ def event_to_dict(event: Any) -> Mapping[str, Any]:
                 result[name] = value
         return result
     raise TypeError(f"Unsupported event type: {type(event)!r}")
-
