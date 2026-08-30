@@ -27,11 +27,18 @@ class BallColorClassifier:
         prototypes = config["prototypes_bgr"]
         if not isinstance(prototypes, Mapping):
             raise ValueError("classification.prototypes_bgr must be a mapping")
-        self.prototype_lab: dict[BallColor, np.ndarray] = {}
-        for name, bgr in prototypes.items():
+        self.prototype_lab: dict[BallColor, tuple[np.ndarray, ...]] = {}
+        for name, configured_bgr in prototypes.items():
             color = BallColor(str(name))
-            pixel = np.asarray([[list(bgr)]], dtype=np.uint8)
-            self.prototype_lab[color] = cv2.cvtColor(pixel, cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+            values = list(configured_bgr)
+            variants = values if values and isinstance(values[0], (list, tuple)) else [values]
+            converted: list[np.ndarray] = []
+            for bgr in variants:
+                pixel = np.asarray([[list(bgr)]], dtype=np.uint8)
+                converted.append(
+                    cv2.cvtColor(pixel, cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+                )
+            self.prototype_lab[color] = tuple(converted)
 
     def _sample_lab(self, frame: np.ndarray, ball: Ball) -> np.ndarray | None:
         height, width = frame.shape[:2]
@@ -71,7 +78,13 @@ class BallColorClassifier:
                 return ColorClassification(BallColor.WHITE, min(1.0, (value - int(self.config["white_value_min"]) + 20) / 40.0), 0.0, 255.0)
             return ColorClassification(BallColor.UNKNOWN, 0.0, float("inf"), 0.0)
         ranked = sorted(
-            ((float(np.linalg.norm(sample - prototype)), color) for color, prototype in self.prototype_lab.items()),
+            (
+                (
+                    min(float(np.linalg.norm(sample - prototype)) for prototype in prototypes),
+                    color,
+                )
+                for color, prototypes in self.prototype_lab.items()
+            ),
             key=lambda item: item[0],
         )
         distance, color = ranked[0]
@@ -94,6 +107,26 @@ class BallColorClassifier:
         for ball in balls:
             result = self.classify(frame, ball)
             classified.append(ball.with_color(result.color, result.confidence))
+        if bool(self.config.get("invalidate_duplicate_colored_balls", False)):
+            unique_colors = (
+                BallColor.YELLOW,
+                BallColor.GREEN,
+                BallColor.BROWN,
+                BallColor.BLUE,
+                BallColor.PINK,
+                BallColor.BLACK,
+                BallColor.WHITE,
+            )
+            for color in unique_colors:
+                matches = [index for index, ball in enumerate(classified) if ball.color is color]
+                if len(matches) <= 1:
+                    continue
+                for index in matches:
+                    # The table can contain only one ball of each colour. Confidence
+                    # alone is not calibrated well enough to choose which observation
+                    # is real, so preserve all diagnostic labels but invalidate every
+                    # conflicting assignment for automatic decisions.
+                    classified[index] = classified[index].with_color(color, 0.0)
         LOGGER.info(
             "balls_classified",
             extra={"event": {"colors": [ball.color.value for ball in classified]}},

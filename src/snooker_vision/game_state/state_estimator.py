@@ -101,7 +101,10 @@ class StableStateEstimator:
         if stable_balls:
             confidence = float(median(ball.confidence for ball in stable_balls)) * max(0.0, count_consistency)
         else:
-            confidence = max(0.0, count_consistency)
+            # An empty detection window is not evidence of an empty snooker table.
+            # It most commonly means occlusion or detector failure and must never
+            # become a high-confidence After State that pots every missing ball.
+            confidence = 0.0
         state = TableState(
             timestamp=self._observations[-1][0],
             balls=tuple(stable_balls),
@@ -122,4 +125,3 @@ def states_continuous(previous_after: TableState, next_before: TableState, toler
         abs(previous_after.color_counts.for_color(color) - next_before.color_counts.for_color(color)) <= tolerance
         for color in BallColor
     )
-

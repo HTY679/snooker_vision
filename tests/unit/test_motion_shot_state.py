@@ -36,6 +36,17 @@ def test_stable_state_requires_multiple_frames(config: dict[str, object]) -> Non
     assert state.color_counts.red == 1
 
 
+def test_empty_detection_window_has_zero_confidence(config: dict[str, object]) -> None:
+    estimator = StableStateEstimator(config["state"])
+    now = datetime.now(timezone.utc)
+    assert estimator.add(now, (), MotionState.STATIC) is None
+    assert estimator.add(now + timedelta(milliseconds=20), (), MotionState.STATIC) is None
+    state = estimator.add(now + timedelta(milliseconds=40), (), MotionState.STATIC)
+    assert state is not None
+    assert state.balls == ()
+    assert state.confidence == 0.0
+
+
 def test_shot_fsm_creates_one_shot_for_moving_interval(config: dict[str, object]) -> None:
     fsm = ShotFSM(config["shot"], float(config["state"]["min_state_confidence"]))
     before = make_state([BallColor.RED, BallColor.WHITE])

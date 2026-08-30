@@ -11,4 +11,9 @@ data/raw/*
 data/processed/*
 !data/processed/.gitkeep
 .streamlit/
-
+.ultralytics/
+Ultralytics/
+runs/
+*.pt
+Snooker Ball Detection.v3i.yolov11/
+data/finetune/

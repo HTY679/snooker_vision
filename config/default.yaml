@@ -32,6 +32,12 @@ detection:
   max_aspect_ratio: 1.55
   min_non_felt_fraction: 0.30
   duplicate_distance_factor: 0.75
+  duplicate_overlap_factor: 0.55
+  expected_radius_px: 14.0
+  radius_tolerance_px: 6.0
+  min_surrounding_felt_fraction: 0.88
+  pocket_exclusion_factor: 1.70
+  max_table_balls: 22
   mask_blur_kernel: 5
   morphology_kernel: 3
   felt_hsv_lower: [30, 25, 20]
@@ -52,13 +58,16 @@ classification:
   white_value_min: 185
   inner_radius_ratio: 0.68
   trim_fraction: 0.10
+  invalidate_duplicate_colored_balls: true
   prototypes_bgr:
-    RED: [35, 35, 210]
+    # Calibrated from the fixed-camera broadcast footage. Custom deployments
+    # may provide multiple BGR prototypes per color as a list of lists.
+    RED: [12, 0, 131]
     YELLOW: [25, 220, 225]
     GREEN: [35, 145, 35]
     BROWN: [35, 75, 130]
     BLUE: [205, 90, 35]
-    PINK: [175, 175, 235]
+    PINK: [96, 55, 206]
     BLACK: [22, 22, 22]
     WHITE: [238, 238, 238]
 

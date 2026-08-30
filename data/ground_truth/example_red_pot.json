@@ -4,7 +4,7 @@
   "frame_start": null,
   "frame_end": null,
   "before": {
-    "red": 6,
+    "red": 10,
     "black": 1,
     "white": 1
   },
@@ -14,7 +14,7 @@
     "count": 1
   },
   "after": {
-    "red": 5,
+    "red": 9,
     "black": 1,
     "white": 1
   },

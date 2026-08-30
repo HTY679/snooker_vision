@@ -63,6 +63,15 @@ streamlit run src/snooker_vision/ui/app.py
 python scripts/run_p0.py --source data/raw/red_pot_corner.mp4 --calibration config/calibration.json
 ```
 
+生成单帧球检测/颜色分类叠加图：
+
+```powershell
+python scripts/evaluate_vision.py `
+  --source data/raw/static_table_001.mp4 `
+  --frame 168 `
+  --output data/processed/vision_eval/static_table_frame168.png
+```
+
 摄像头输入使用 `--source 0`。无窗口批处理可增加 `--headless --max-frames 500`。
 
 ## 4. 运行确定性 Demo
